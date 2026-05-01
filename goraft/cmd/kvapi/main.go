@@ -12,7 +12,7 @@ type statemachine struct {
 	server int
 }
 
-type commnadKind unit8
+type commnadKind uint8
 
 const (
 	setCommand commnadKind = iota
@@ -68,4 +68,21 @@ func encodeCommand(c command) []byte {
 	msg.WriteString(c.value)
 
 	return msg.Bytes()
+}
+
+// Decoding the bytes.
+
+func decodeCommand(msg []byte) command {
+	var c command
+	c.kind = commnadKind(msg[0])
+
+	keyLen := binary.LittleEndian.Uint64(msg[1:9])
+	c.key = string(msg[9 : 9+keyLen])
+
+	if c.kind == setCommand {
+		valLen := binary.LittleEndian.Uint64(msg[9+keyLen : 9+keyLen+8])
+		c.value = string(msg[9+keyLen+8 : 9+keyLen+8+valLen])
+	}
+
+	return c
 }
