@@ -2,11 +2,19 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/binary"
 	"fmt"
+	"image/color/palette"
 	"log"
+	"math/rand"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
+
+	"golang.org/x/tools/go/cfg"
 )
 
 type statemachine struct {
@@ -30,6 +38,99 @@ type command struct {
 type httpServer struct {
 	raft *goraft.server
 	db   *sync.Map
+}
+
+type config struct {
+	cluster []goraft.ClusterMember
+	index   int
+	id      string
+	address string
+	http    string
+}
+
+// Entry of the application
+func main() {
+	var b [8]byte
+	_, err := crypto.Read(b[:])
+	
+	if err != nil {
+		panic("cannot seed math/rand package with cryptographically secure random number generator")
+	}
+
+	rand.Seed(int64(binary.LittleEndian.Uint64(b[:])))
+
+	cfg := getConfig()
+
+	var db sync.Map
+
+	var sm statemachine
+	sm.db = &db
+	sm.server = cfg.index
+
+	s := goraft.NewServer(cfg.cluster, &sm, ".", cfg.index)
+	go s.Start()
+
+	hs := httpServer{s, &db}
+
+	http.HandleFunc("/set", hs.setHandler)
+	http.HandleFunc("/get", hs.getHandler)
+	err = http.ListenAndServe(cfg.http, nil)
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+func getConfig() config {
+	cfg := config{}
+	var node string
+
+	for i, arg := rang os.Args[1:] {
+		if arg == "--node" {
+			var err error
+			node = os.Args[i+2]
+			cfg.index, err = strconv.Atoi(node)
+			if err != nil {
+				log.Fatal("Expected $value to be a valid integer in `--node $value`,  got: %s", node)
+			}
+
+			i++
+			continue
+		}
+
+		if arg == "--cluster" {
+			cluster := os.Args[i+2]
+			var clusterEntry goraft.ClusterMember
+			for _, part := range strings.Split(cluster, ";") {
+				idAddress := strings.Split(part, ",")
+				var err error
+				clusterEntry.Id, err = strconv.ParseUint(idAddress[0], 10, 64)
+				if err != nil {
+					log.Fatal("Expected $id to be a valid integer integer in `--cluster $id,$ip`, got: %s", idAddress[o])
+				}
+
+				clusterEntry.Address = idAddress[1]
+				cfg.cluster = append(cfg.cluster, clusterEntry)
+			}
+
+			i++
+			continue
+		}
+	}
+
+	if node == "" {
+		log.Fatal("Missing required parameter: --node $index")
+	}
+
+	if cfg.http == "" {
+		log.Fatal("Missing requred parameter: --http $address")
+	}
+
+	if len(cfg.cluster) == 0 {
+		log.Fatal("Missing required parameter --cluster $node1Id,$node1Address;...$nodeNId,$nodeNAddress")
+	}
+
+	return cfg
 }
 
 func (s *statemachine) Apply(cmd []byte) ([]byte, error) {
@@ -176,3 +277,6 @@ func (hs httpServer) getHandler(w http.ResponseWriter, r *http.Request) {
 		written += n
 	}
 }
+
+// After setting up the state machine and the HTTP API for interacting with the Raft cluster,
+// we'll attach it together with reading configuration.
