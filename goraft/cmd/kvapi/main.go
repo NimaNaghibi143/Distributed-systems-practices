@@ -115,3 +115,64 @@ func (hs httpServer) setHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+// GET Operation:
+// A: We already embed a local compy of the disttibuted key-value map.
+// We could just read from that map in the current process.
+// B: Passing the read through the log replication.
+// we'll support both though.
+
+// Example:
+//
+// curl http://localhost:3000/get?key=x
+// 1
+// curl http://localhost:3000/get?key=x&relaxed=ture
+// 1
+
+func (hs httpServer) getHandler(w http.ResponseWriter, r *http.Request) {
+	var c command
+	c.kind = getCommand
+	c.key = r.URL.Query().Get("key")
+
+	var value []byte
+	var err error
+
+	if r.URL.Query().Get("relaxed") == "true" {
+		v, ok := hs.db.Load(c.key)
+		if !ok {
+			err = fmt.Errorf("key not found")
+		} else {
+			value = []byte(v.(string))
+		}
+	} else {
+		var results []goraft.ApplyResult
+		results, err = hs.raft.Apply([][]byte{encodeCommand(c)})
+		if err == nil {
+			if len(results) != 1 {
+				err = fmt.Errorf("Expected single response from Raft, got: %d", len(results))
+			} else if results[0].Error != nil {
+				err = results[0].Error
+			} else {
+				value = results[0].Result
+			}
+		}
+	}
+
+	if err != nil {
+		log.Printf("Could not encode key-value in http response: %s", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	written := 0
+	for written < len(value) {
+		n, err := w.Write(value[written:])
+		if err != nil {
+			log.Printf("Could not encode key-value in http response: %s", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		written += n
+	}
+}
