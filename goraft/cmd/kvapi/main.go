@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"encoding/binary"
 	"fmt"
-	"image/color/palette"
 	"log"
 	"math/rand"
 	"net/http"
@@ -13,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"golang.org/x/tools/go/cfg"
 )
 
 type statemachine struct {
@@ -52,7 +49,7 @@ type config struct {
 func main() {
 	var b [8]byte
 	_, err := crypto.Read(b[:])
-	
+
 	if err != nil {
 		panic("cannot seed math/rand package with cryptographically secure random number generator")
 	}
@@ -85,7 +82,7 @@ func getConfig() config {
 	cfg := config{}
 	var node string
 
-	for i, arg := rang os.Args[1:] {
+	for i, arg := range os.Args[1:] {
 		if arg == "--node" {
 			var err error
 			node = os.Args[i+2]
