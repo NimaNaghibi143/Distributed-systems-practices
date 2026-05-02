@@ -8,7 +8,7 @@ Nodes in a cluster conduct elections to pick a leader. Users of the Raft cluster
 
 * **HTTP API:** We need HTTP endpoints that allow the user tp operate the state mahcine through the Raft cluster.
 
-**Raft Server** based on the raft papar:
+* **Raft Server** based on the raft papar:
 
 ### State
 
@@ -58,7 +58,7 @@ Nodes in a cluster conduct elections to pick a leader. Users of the Raft cluster
 
 * term: candidate's term
 * cnadidateId: cnadidate requesting vote
-* lastLogIndex: index of candidate's last log entry 
+* lastLogIndex: index of candidate's last log entry
 * lastLogTerm: term of candidate's last log entry
 
 #### Results(Voting)
@@ -71,5 +71,34 @@ Nodes in a cluster conduct elections to pick a leader. Users of the Raft cluster
 1. Reply false if term < currentTerm
 2. If votedFor is null or candidateId, and candidate's log is at least up-to-date as reciever's  log, grant vote.
 
+### Rules for Servers
 
+#### All servers
 
+* If commitIndex > lastApplied: increment lastApplied, apply log[lastApplied] to state machine
+* If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower
+
+#### Followers
+
+* Respond to RPCs from candidates and leaders
+* If election timeout elapses without recieving AppendEntries RPC from current leader or granting vote to candidate: convert to candidate
+
+#### Candidates
+
+* On conversion to candidate, start election:
+  * Increment currentTerm
+  * Vote for self
+  * Reset election timer
+  * Send RequestVote RPCs to all other servers
+* If votes recieved from majority of servers: become leader
+* If AppendEntries RPC recieved from new leader: convert to follower
+* If election timeout elapses: start new election
+
+#### Leaders
+
+* Upon election: send initial empty AppendEntries RPCs (heartbeat) to each server; repeat during idle periods to prevent election timeouts
+* If command recieved from client: append entry to local log, respond after entry applied to state machine
+* If last log index >= nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex 
+  * If successful: update update nextIndex and matchIndex for follower
+  * If AppendEntries fails because of log inconsistency: decrement nextIndex and retry
+* If there exists an N such that N > commitIndex, a majority of matchIndex[i] >= N, and log[N]. term == currentTerm: set commitIndex = N
