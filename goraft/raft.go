@@ -110,3 +110,30 @@ type Server struct {
 	// Index of this server
 	clusterIndex int
 }
+
+func NewServer(
+	clusterConfig []ClusterMember,
+	statemachine StateMachine,
+	metadataDir string,
+	clusterIndex int,
+) *Server {
+	// Expicitly make a copy of the cluster because we'll be modifying it in the server.
+	var cluster []ClusterMember
+	for _, c := range clusterConfig {
+		if c.Id == 0 {
+			panic("Id must not be zero.")
+		}
+		cluster = append(cluster, c)
+	}
+
+	return &Server{
+		id:           cluster[clusterIndex].Id,
+		address:      cluster[clusterIndex].Address,
+		cluster:      cluster,
+		statemachine: statemachine,
+		metadataDir:  metadataDir,
+		clusterIndex: clusterIndex,
+		heartBeatMs:  300,
+		mu:           sync.Mutex{},
+	}
+}
